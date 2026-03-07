@@ -15,9 +15,11 @@ function App() {
   return (
     <>
       <Toaster />
-      <Button onClick={() => mutate()} disabled={isPending}>
-        {isPending ? "Pinging..." : "Ping API"}
-      </Button>
+      <div className="flex h-screen items-center justify-center">
+        <Button size="lg" className="h-16 px-12 text-xl" onClick={() => mutate()} disabled={isPending}>
+          {isPending ? "Pinging..." : "Ping API"}
+        </Button>
+      </div>
     </>
   );
 }

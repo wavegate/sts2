@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlmodel import select as sqlmodel_select
 
 import json
+from auth import get_current_user_id_optional
 from database import get_session
-from models import Run
+from models import Run, User
 from run_ingest import ingest_run, run_from_dict
 from schemas.run_upload import RunFileSchema
 from s3_runs import upload_run_file_to_s3
@@ -26,26 +28,72 @@ class UploadRunsResponse(BaseModel):
     errors: list[UploadError]
 
 
-@router.get("", response_model=list[Run])
+class UserOut(BaseModel):
+    id: str
+
+
+class RunResponse(BaseModel):
+    """Run with optional user (owner)."""
+
+    model_config = {"from_attributes": True}
+
+    user_id: str | None = None
+    start_time: int = 0
+    seed: str = ""
+    build_id: str = ""
+    schema_version: int = 0
+    run_time: int = 0
+    win: bool = False
+    was_abandoned: bool = False
+    killed_by_encounter: str = "NONE.NONE"
+    killed_by_event: str = "NONE.NONE"
+    character: str = ""
+    ascension: int = 0
+    game_mode: str = "standard"
+    acts: list[str] | None = None
+    modifiers: list[dict] | None = None
+    platform_type: str | None = None
+    deck_size: int = 0
+    upgraded_card_count: int = 0
+    relic_count: int = 0
+    floor_reached: int = 0
+    bosses_killed: int = 0
+    map_point_counts: dict[str, int] | None = None
+    deck: list[dict] | None = None
+    relics: list[dict] | None = None
+    user: UserOut | None = None
+
+
+@router.get("", response_model=list[RunResponse])
 async def list_runs(
     session: AsyncSession = Depends(get_session),
-) -> list[Run]:
-    """List all runs, newest first."""
+) -> list[RunResponse]:
+    """List all runs across users. Each run includes its owner (user) when present."""
     result = await session.execute(
-        sqlmodel_select(Run).order_by(Run.start_time.desc())
+        sqlmodel_select(Run)
+        .options(selectinload(Run.user))
+        .order_by(Run.start_time.desc())
     )
-    return list(result.scalars().all())
+    runs = list(result.unique().scalars().all())
+    return [
+        RunResponse(
+            **run.model_dump(exclude={"user"}),
+            user=UserOut(id=run.user.id) if run.user else None,
+        )
+        for run in runs
+    ]
 
 
 @router.post("/upload", response_model=UploadRunsResponse)
 async def upload_runs(
     files: list[UploadFile] = File(..., description="One or more .run files"),
     session: AsyncSession = Depends(get_session),
+    user_id: str | None = Depends(get_current_user_id_optional),
 ) -> UploadRunsResponse:
     """
     Accept one or more .run files. Each is uploaded to S3 and ingested.
     Replaces an existing run with the same (start_time, seed) if present.
-    Returns runs that succeeded and per-file errors for any that failed.
+    If signed in, runs are associated with that user; otherwise anonymous.
     """
     runs: list[Run] = []
     errors: list[UploadError] = []
@@ -100,8 +148,14 @@ async def upload_runs(
 
         await upload_run_file_to_s3(run_id, contents)
 
+        if user_id is not None:
+            existing_user = await session.get(User, user_id)
+            if existing_user is None:
+                session.add(User(id=user_id))
+                await session.flush()
+
         try:
-            run = run_from_dict(data)
+            run = run_from_dict(data, user_id)
         except KeyError as e:
             errors.append(UploadError(filename=filename, detail=f"Invalid run file: missing {e}"))
             continue

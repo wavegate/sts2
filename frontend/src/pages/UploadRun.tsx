@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColDef } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
+import { useUser } from "@clerk/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cardsGridTheme } from "@/src/styles/ag-grid-theme";
 import { getRuns, uploadRunFiles } from "@/src/services/runsService";
 import type { Run } from "@/src/types/runs";
@@ -78,6 +80,7 @@ function UploadRunPage() {
   const [uploading, setUploading] = useState(false);
   const [quickFilterText, setQuickFilterText] = useState("");
   const queryClient = useQueryClient();
+  const { user } = useUser();
 
   const { data: runs, isLoading } = useQuery({
     queryKey: ["runs"],
@@ -85,6 +88,17 @@ function UploadRunPage() {
   });
 
   const defaultColDef = useMemo(() => DEFAULT_COL_DEF, []);
+
+  const runsForTable = useMemo(() => {
+    const all = runs ?? [];
+    return all;
+  }, [runs]);
+
+  const myRuns = useMemo(() => {
+    const all = runs ?? [];
+    if (!user?.id) return [];
+    return all.filter((r) => r.user_id === user.id || r.user?.id === user.id);
+  }, [runs, user?.id]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const chosen = Array.from(e.target.files ?? []);
@@ -189,27 +203,62 @@ function UploadRunPage() {
       {isLoading ? (
         <Skeleton className="h-[400px] w-full rounded-lg" />
       ) : (
-        <>
-          <Input
-            type="search"
-            placeholder="Search runs..."
-            value={quickFilterText}
-            onChange={(e) => setQuickFilterText(e.target.value)}
-            className="mb-3"
-          />
-          <div className="size-full" style={{ height: 400 }}>
-            <AgGridReact<Run>
-              theme={cardsGridTheme}
-              quickFilterText={quickFilterText}
-              rowData={runs ?? []}
-              columnDefs={COLUMN_DEFS}
-              defaultColDef={defaultColDef}
-              getRowId={(params) =>
-                `${params.data?.start_time ?? ""}_${params.data?.seed ?? ""}`
-              }
+        <Tabs defaultValue="all" className="w-full">
+          <TabsList variant="line" className="mb-3">
+            <TabsTrigger value="all">All runs</TabsTrigger>
+            <TabsTrigger value="mine">My runs</TabsTrigger>
+          </TabsList>
+          <TabsContent value="all" className="mt-0">
+            <Input
+              type="search"
+              placeholder="Search runs..."
+              value={quickFilterText}
+              onChange={(e) => setQuickFilterText(e.target.value)}
+              className="mb-3"
             />
-          </div>
-        </>
+            <div className="size-full" style={{ height: 400 }}>
+              <AgGridReact<Run>
+                theme={cardsGridTheme}
+                quickFilterText={quickFilterText}
+                rowData={runsForTable}
+                columnDefs={COLUMN_DEFS}
+                defaultColDef={defaultColDef}
+                getRowId={(params) =>
+                  `${params.data?.start_time ?? ""}_${params.data?.seed ?? ""}`
+                }
+              />
+            </div>
+          </TabsContent>
+          <TabsContent value="mine" className="mt-0">
+            {!user ? (
+              <p className="text-sm text-muted-foreground">
+                Sign in to see your runs.
+              </p>
+            ) : (
+              <>
+                <Input
+                  type="search"
+                  placeholder="Search runs..."
+                  value={quickFilterText}
+                  onChange={(e) => setQuickFilterText(e.target.value)}
+                  className="mb-3"
+                />
+                <div className="size-full" style={{ height: 400 }}>
+                  <AgGridReact<Run>
+                    theme={cardsGridTheme}
+                    quickFilterText={quickFilterText}
+                    rowData={myRuns}
+                    columnDefs={COLUMN_DEFS}
+                    defaultColDef={defaultColDef}
+                    getRowId={(params) =>
+                      `${params.data?.start_time ?? ""}_${params.data?.seed ?? ""}`
+                    }
+                  />
+                </div>
+              </>
+            )}
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );

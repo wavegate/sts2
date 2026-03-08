@@ -4,7 +4,7 @@ import type { Run } from "@/src/types/runs";
 const RUNS_BASE = "/api/runs";
 
 /**
- * List all runs (newest first).
+ * List all runs (newest first). Returns runs for all users; each run includes user when present.
  * GET /api/runs
  */
 export async function getRuns(): Promise<Run[]> {

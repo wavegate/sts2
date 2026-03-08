@@ -18,6 +18,7 @@ from models import (
     Potion,
     Relic,
     Run,
+    User
 )
 
 load_dotenv()

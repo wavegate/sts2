@@ -1,9 +1,15 @@
-from __future__ import annotations
-
 from typing import Any
-
 from sqlalchemy import Column, JSON
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
+
+
+class User(SQLModel, table=True):
+    """User synced from Clerk (webhook will create/delete). id is Clerk user id."""
+
+    __tablename__ = "users"
+
+    id: str = Field(primary_key=True, description="Clerk user id")
+    runs: list["Run"] = Relationship(back_populates="user")
 
 
 class Run(SQLModel, table=True):
@@ -11,8 +17,12 @@ class Run(SQLModel, table=True):
 
     __tablename__ = "runs"
 
+    # Owner: optional FK to users (set when uploaded while signed in).
+    user_id: str | None = Field(default=None, foreign_key="users.id")
+    user: User | None = Relationship(back_populates="runs")
     # Composite primary key: same (start_time, seed) = same run (upsert replaces)
-    start_time: int = Field(primary_key=True, description="Run start Unix timestamp")
+    start_time: int = Field(
+        primary_key=True, description="Run start Unix timestamp")
     seed: str = Field(primary_key=True)
     build_id: str
     schema_version: int
@@ -34,11 +44,14 @@ class Run(SQLModel, table=True):
     relic_count: int = 0
     floor_reached: int = 0
     bosses_killed: int = 0
-    map_point_counts: dict[str, int] | None = Field(default=None, sa_column=Column(JSON))
+    map_point_counts: dict[str, int] | None = Field(
+        default=None, sa_column=Column(JSON))
 
     # Optional detail (card/relic ids and floor_added_to_deck)
-    deck: list[dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
-    relics: list[dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    deck: list[dict[str, Any]] | None = Field(
+        default=None, sa_column=Column(JSON))
+    relics: list[dict[str, Any]] | None = Field(
+        default=None, sa_column=Column(JSON))
 
 
 class Card(SQLModel, table=True):
@@ -59,14 +72,16 @@ class Card(SQLModel, table=True):
     damage: int | None = None
     block: int | None = None
     hit_count: int | None = None
-    powers_applied: list[dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    powers_applied: list[dict[str, Any]] | None = Field(
+        default=None, sa_column=Column(JSON))
     cards_draw: int | None = None
     energy_gain: int | None = None
     hp_loss: int | None = None
     keywords: list[str] | None = Field(default=None, sa_column=Column(JSON))
     tags: list[str] | None = Field(default=None, sa_column=Column(JSON))
     vars: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
-    upgrade: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    upgrade: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON))
     image_url: str | None = None
     beta_image_url: str | None = None
 
@@ -81,8 +96,10 @@ class Character(SQLModel, table=True):
     starting_gold: int | None = None
     max_energy: int | None = None
     orb_slots: int | None = None
-    starting_deck: list[str] | None = Field(default=None, sa_column=Column(JSON))
-    starting_relics: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    starting_deck: list[str] | None = Field(
+        default=None, sa_column=Column(JSON))
+    starting_relics: list[str] | None = Field(
+        default=None, sa_column=Column(JSON))
     unlocks_after: str | None = None
     gender: str | None = None
     color: str | None = None
@@ -112,9 +129,12 @@ class Monster(SQLModel, table=True):
     max_hp: int | None = None
     min_hp_ascension: int | None = None
     max_hp_ascension: int | None = None
-    moves: list[dict[str, str]] | None = Field(default=None, sa_column=Column(JSON))
-    damage_values: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
-    block_values: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    moves: list[dict[str, str]] | None = Field(
+        default=None, sa_column=Column(JSON))
+    damage_values: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON))
+    block_values: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON))
     image_url: str | None = None
 
 
@@ -151,7 +171,8 @@ class Encounter(SQLModel, table=True):
     is_weak: bool | None = None
     act: str | None = None
     tags: list[str] | None = Field(default=None, sa_column=Column(JSON))
-    monsters: list[dict[str, str]] | None = Field(default=None, sa_column=Column(JSON))
+    monsters: list[dict[str, str]] | None = Field(
+        default=None, sa_column=Column(JSON))
     loss_text: str | None = None
 
 
@@ -163,4 +184,5 @@ class Event(SQLModel, table=True):
     type: str | None = None  # Event, Shared
     act: str | None = None
     description: str | None = None
-    options: list[dict[str, str]] | None = Field(default=None, sa_column=Column(JSON))
+    options: list[dict[str, str]] | None = Field(
+        default=None, sa_column=Column(JSON))

@@ -48,16 +48,12 @@ def _bosses_killed(map_point_counts: dict[str, int] | None) -> int:
     return (map_point_counts or {}).get("boss", 0)
 
 
-def run_from_file(path: Path | str) -> Run:
+def run_from_file(path: Path | str, user_id: str | None = None) -> Run:
     """
     Load a .run JSON file and return a Run SQLModel instance.
 
     path: Path or path string to the .run file.
-
-    Raises:
-        FileNotFoundError: if path does not exist
-        json.JSONDecodeError: if file is not valid JSON
-        KeyError: if required top-level keys are missing
+    user_id: Optional Clerk user id (owner of the run). Set when signed in.
     """
     path = Path(path)
     if not path.exists():
@@ -66,14 +62,15 @@ def run_from_file(path: Path | str) -> Run:
     with path.open(encoding="utf-8") as f:
         data = json.load(f)
 
-    return run_from_dict(data)
+    return run_from_dict(data, user_id)
 
 
-def run_from_dict(data: dict[str, Any]) -> Run:
+def run_from_dict(data: dict[str, Any], user_id: str | None = None) -> Run:
     """
     Build a Run SQLModel instance from a parsed run JSON dict.
 
     data: The root object of a .run file (must contain start_time, players, etc.).
+    user_id: Optional Clerk user id (owner). Set when uploaded while signed in.
     """
     start_time = data["start_time"]
     players = data.get("players") or []
@@ -94,6 +91,7 @@ def run_from_dict(data: dict[str, Any]) -> Run:
     bosses_killed = _bosses_killed(map_point_counts)
 
     return Run(
+        user_id=user_id,
         start_time=start_time,
         seed=data.get("seed", ""),
         build_id=data.get("build_id", ""),
@@ -138,11 +136,12 @@ async def ingest_run(session: AsyncSession, run: Run) -> Run:
     return run
 
 
-async def ingest_run_file(session: AsyncSession, path: Path | str) -> Run:
+async def ingest_run_file(
+    session: AsyncSession, path: Path | str, user_id: str | None = None
+) -> Run:
     """
     Load a .run file, create a Run model, and upsert it into the session.
-    Uses (start_time, seed) for deduplication: existing run with same pair is replaced.
-    Caller must commit the session.
+    Uses (start_time, seed) for deduplication. Caller must commit the session.
     """
-    run = run_from_file(path)
+    run = run_from_file(path, user_id)
     return await ingest_run(session, run)

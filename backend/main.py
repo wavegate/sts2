@@ -1,19 +1,12 @@
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
-from database import engine, init_db
-from models import Card
+
+from routers.cards import router as cards_router
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await init_db()
-    yield
-    await engine.dispose()
+app = FastAPI()
 
-
-app = FastAPI(lifespan=lifespan)
+app.include_router(cards_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,16 +16,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.get("/")
-async def read_root():
-    async with engine.connect() as conn:
-        result = await conn.execute(text("SELECT 1"))
-        result.fetchone()
-    return {"Hello": "World", "db": "connected"}
-
-
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: str | None = None):
-    return {"item_id": item_id, "q": q}

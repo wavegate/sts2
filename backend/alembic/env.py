@@ -17,6 +17,7 @@ from models import (
     Monster,
     Potion,
     Relic,
+    Run,
 )
 
 load_dotenv()

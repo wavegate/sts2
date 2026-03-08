@@ -6,6 +6,41 @@ from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
 
 
+class Run(SQLModel, table=True):
+    """A single game run (one .run file). Identified by (start_time, seed)."""
+
+    __tablename__ = "runs"
+
+    # Composite primary key: same (start_time, seed) = same run (upsert replaces)
+    start_time: int = Field(primary_key=True, description="Run start Unix timestamp")
+    seed: str = Field(primary_key=True)
+    build_id: str
+    schema_version: int
+    run_time: int = Field(description="Duration in seconds")
+    win: bool = False
+    was_abandoned: bool = False
+    killed_by_encounter: str = Field(default="NONE.NONE")
+    killed_by_event: str = Field(default="NONE.NONE")
+    character: str
+    ascension: int = 0
+    game_mode: str = Field(default="standard")
+    acts: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    modifiers: list[Any] | None = Field(default=None, sa_column=Column(JSON))
+    platform_type: str | None = None
+
+    # Derived summary stats
+    deck_size: int = 0
+    upgraded_card_count: int = 0
+    relic_count: int = 0
+    floor_reached: int = 0
+    bosses_killed: int = 0
+    map_point_counts: dict[str, int] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Optional detail (card/relic ids and floor_added_to_deck)
+    deck: list[dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    relics: list[dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+
+
 class Card(SQLModel, table=True):
     __tablename__ = "cards"
 

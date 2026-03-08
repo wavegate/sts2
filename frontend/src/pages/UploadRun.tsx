@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cardsGridTheme } from "@/src/styles/ag-grid-theme";
-import { getRuns, uploadRunFile } from "@/src/services/runsService";
+import { getRuns, uploadRunFiles } from "@/src/services/runsService";
 import type { Run } from "@/src/types/runs";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -74,7 +74,7 @@ const COLUMN_DEFS: ColDef<Run>[] = [
 ];
 
 function UploadRunPage() {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [quickFilterText, setQuickFilterText] = useState("");
   const queryClient = useQueryClient();
@@ -87,47 +87,42 @@ function UploadRunPage() {
   const defaultColDef = useMemo(() => DEFAULT_COL_DEF, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const chosen = e.target.files?.[0];
-    if (chosen) {
-      if (!chosen.name.toLowerCase().endsWith(".run")) {
-        toast.error("Please select a .run file");
-        setFile(null);
-        return;
-      }
-      setFile(chosen);
-    } else {
-      setFile(null);
+    const chosen = Array.from(e.target.files ?? []);
+    const valid = chosen.filter((f) => f.name.toLowerCase().endsWith(".run"));
+    const rejected = chosen.length - valid.length;
+    if (rejected > 0) {
+      toast.error(`${rejected} file(s) skipped (only .run files are accepted)`);
     }
+    setFiles(valid);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) {
-      toast.error("Select a .run file first");
-      return;
-    }
-    if (!file.name.toLowerCase().endsWith(".run")) {
-      toast.error("Only .run files are accepted");
+    if (files.length === 0) {
+      toast.error("Select one or more .run files first");
       return;
     }
     setUploading(true);
     try {
-      const run = await uploadRunFile(file);
-      const char = run.character.replace("CHARACTER.", "");
-      toast.success(
-        `Run ingested: ${char}, ${run.win ? "Victory" : "Defeat"} (floor ${run.floor_reached})`,
-      );
-      setFile(null);
-      const input = document.getElementById(
-        "run-file-input",
-      ) as HTMLInputElement;
+      const { runs: uploadedRuns, errors: uploadErrors } = await uploadRunFiles(files);
+      if (uploadedRuns.length > 0) {
+        toast.success(`${uploadedRuns.length} run(s) uploaded`);
+      }
+      if (uploadErrors.length > 0) {
+        const msg = uploadErrors
+          .map((e) => `${e.filename}: ${e.detail}`)
+          .slice(0, 2)
+          .join("; ");
+        toast.error(`${uploadErrors.length} failed: ${msg}${uploadErrors.length > 2 ? "…" : ""}`);
+      }
+      setFiles([]);
+      const input = document.getElementById("run-file-input") as HTMLInputElement;
       if (input) input.value = "";
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
     } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "response" in err
-          ? (err as { response?: { data?: { detail?: string } } }).response
-              ?.data?.detail
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
           : err instanceof Error
             ? err.message
             : "Upload failed";
@@ -140,24 +135,52 @@ function UploadRunPage() {
   return (
     <div className="container mx-auto flex flex-col p-6">
       <h1 className="mb-6 text-2xl font-semibold">Upload run</h1>
+
+      <details className="mb-6">
+        <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
+          Where to find run files
+        </summary>
+        <p className="mt-2 text-sm text-muted-foreground">
+          On <strong>Mac (Steam)</strong>:
+        </p>
+        <code className="mt-1 block break-all rounded bg-muted px-2 py-1.5 font-mono text-xs">
+          ~/Library/Application Support/SlayTheSpire2/steam/&lt;steam_id&gt;/profile&lt;n&gt;/saves/history
+        </code>
+        <p className="mt-2 text-sm text-muted-foreground">
+          <code className="rounded bg-muted px-1 font-mono text-xs">Library</code> is hidden in Finder — use Go → Go to Folder (⇧⌘G) and paste the path, or enable “Show Library” in your home folder’s View options.
+        </p>
+        <p className="mt-4 text-sm text-muted-foreground">
+          On <strong>PC (Steam)</strong>:
+        </p>
+        <code className="mt-1 block break-all rounded bg-muted px-2 py-1.5 font-mono text-xs">
+          %APPDATA%\SlayTheSpire2\steam\&lt;steam_id&gt;\profile1\saves\history
+        </code>
+        <p className="mt-2 text-sm text-muted-foreground">
+          AppData is a hidden folder — you may need to enable hidden items in File Explorer.
+        </p>
+      </details>
+
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <label htmlFor="run-file-input" className="text-sm font-medium">
-            Run file
+            Run files
           </label>
           <Input
             id="run-file-input"
             type="file"
             accept=".run"
+            multiple
             onChange={handleFileChange}
             disabled={uploading}
             className="cursor-pointer"
           />
-          {file && (
-            <span className="text-sm text-muted-foreground">{file.name}</span>
+          {files.length > 0 && (
+            <span className="text-sm text-muted-foreground">
+              {files.length} file(s) selected
+            </span>
           )}
         </div>
-        <Button type="submit" disabled={!file || uploading}>
+        <Button type="submit" disabled={files.length === 0 || uploading}>
           {uploading ? "Uploading…" : "Upload"}
         </Button>
       </form>
@@ -172,7 +195,7 @@ function UploadRunPage() {
             placeholder="Search runs..."
             value={quickFilterText}
             onChange={(e) => setQuickFilterText(e.target.value)}
-            className="mb-3 max-w-sm"
+            className="mb-3"
           />
           <div className="size-full" style={{ height: 400 }}>
             <AgGridReact<Run>

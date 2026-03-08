@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from pydantic import ValidationError
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select as sqlmodel_select
 
@@ -16,6 +16,16 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 RUN_FILE_MAX_BYTES = 15 * 1024 * 1024  # 15 MiB
 
 
+class UploadError(BaseModel):
+    filename: str
+    detail: str
+
+
+class UploadRunsResponse(BaseModel):
+    runs: list[Run]
+    errors: list[UploadError]
+
+
 @router.get("", response_model=list[Run])
 async def list_runs(
     session: AsyncSession = Depends(get_session),
@@ -27,63 +37,78 @@ async def list_runs(
     return list(result.scalars().all())
 
 
-@router.post("/upload", response_model=Run)
-async def upload_run(
-    file: UploadFile,
+@router.post("/upload", response_model=UploadRunsResponse)
+async def upload_runs(
+    files: list[UploadFile] = File(..., description="One or more .run files"),
     session: AsyncSession = Depends(get_session),
-) -> Run:
+) -> UploadRunsResponse:
     """
-    Accept a .run file only. Uploads the file to S3, then ingests into the database.
-    Replaces an existing run with the same start_time (id) if present.
+    Accept one or more .run files. Each is uploaded to S3 and ingested.
+    Replaces an existing run with the same (start_time, seed) if present.
+    Returns runs that succeeded and per-file errors for any that failed.
     """
-    if not file.filename or not file.filename.lower().endswith(".run"):
-        raise HTTPException(
-            status_code=400,
-            detail="Only .run files are accepted",
-        )
-    try:
-        contents = await file.read()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail="Failed to read file") from e
+    runs: list[Run] = []
+    errors: list[UploadError] = []
 
-    if len(contents) > RUN_FILE_MAX_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large (max {RUN_FILE_MAX_BYTES // (1024*1024)} MiB)",
-        )
+    for file in files:
+        filename = file.filename or "(unnamed)"
+        if not filename.lower().endswith(".run"):
+            errors.append(UploadError(filename=filename, detail="Only .run files are accepted"))
+            continue
+        try:
+            contents = await file.read()
+        except Exception as e:
+            errors.append(UploadError(filename=filename, detail="Failed to read file"))
+            continue
 
-    try:
-        data = json.loads(contents.decode("utf-8"))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from e
-    except UnicodeDecodeError as e:
-        raise HTTPException(status_code=400, detail="File must be UTF-8") from e
+        if len(contents) > RUN_FILE_MAX_BYTES:
+            errors.append(
+                UploadError(
+                    filename=filename,
+                    detail=f"File too large (max {RUN_FILE_MAX_BYTES // (1024*1024)} MiB)",
+                )
+            )
+            continue
 
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail="File must be a JSON object")
+        try:
+            data = json.loads(contents.decode("utf-8"))
+        except ValueError as e:
+            errors.append(UploadError(filename=filename, detail=f"Invalid JSON: {e}"))
+            continue
+        except UnicodeDecodeError as e:
+            errors.append(UploadError(filename=filename, detail="File must be UTF-8"))
+            continue
 
-    try:
-        RunFileSchema.model_validate(data)
-    except ValidationError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={"message": "Run file does not match schema", "errors": e.errors()},
-        ) from e
+        if not isinstance(data, dict):
+            errors.append(UploadError(filename=filename, detail="File must be a JSON object"))
+            continue
 
-    start_time = data["start_time"]
-    seed = data.get("seed") or ""
-    run_id = f"{start_time}_{seed.replace('/', '_').replace(' ', '_')}"
+        try:
+            RunFileSchema.model_validate(data)
+        except ValidationError as e:
+            errors.append(
+                UploadError(
+                    filename=filename,
+                    detail=f"Schema validation failed: {e.errors()!r}",
+                )
+            )
+            continue
 
-    # Upload file to S3 first (key: runs/{start_time}_{seed}.run)
-    await upload_run_file_to_s3(run_id, contents)
+        start_time = data["start_time"]
+        seed = data.get("seed") or ""
+        run_id = f"{start_time}_{seed.replace('/', '_').replace(' ', '_')}"
 
-    try:
-        run = run_from_dict(data)
-    except KeyError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid run file: missing {e}") from e
+        await upload_run_file_to_s3(run_id, contents)
 
-    run = await ingest_run(session, run)
-    await session.commit()
-    await session.refresh(run)
+        try:
+            run = run_from_dict(data)
+        except KeyError as e:
+            errors.append(UploadError(filename=filename, detail=f"Invalid run file: missing {e}"))
+            continue
 
-    return run
+        run = await ingest_run(session, run)
+        await session.commit()
+        await session.refresh(run)
+        runs.append(run)
+
+    return UploadRunsResponse(runs=runs, errors=errors)

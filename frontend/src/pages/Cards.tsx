@@ -1,51 +1,75 @@
-import { useQuery } from '@tanstack/react-query'
-import { getCards } from '@/src/services/cardsService'
-import { Card as CardUi } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { ColDef } from "ag-grid-community";
+import { AgGridReact } from "ag-grid-react";
+import { cardsGridTheme } from "@/src/styles/ag-grid-theme";
+import { getCards } from "@/src/services/cardsService";
+import type { Card } from "@/src/types/cards";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const DEFAULT_COL_DEF: ColDef<Card> = {
+  sortable: true,
+  filter: true,
+  resizable: true,
+};
+
+const COLUMN_DEFS: ColDef<Card>[] = [
+  { field: "id", headerName: "ID", width: 140 },
+  { field: "name", headerName: "Name", flex: 1, minWidth: 160 },
+  { field: "type", headerName: "Type", width: 100 },
+  { field: "rarity", headerName: "Rarity", width: 100 },
+  { field: "color", headerName: "Color", width: 100 },
+  { field: "cost", headerName: "Cost", width: 80 },
+  {
+    field: "description",
+    headerName: "Description",
+    flex: 2,
+    minWidth: 200,
+    wrapText: true,
+    autoHeight: true,
+    valueGetter: (params) =>
+      params.data?.description?.replace(/\[.*?\]/g, "").trim() ?? "",
+  },
+];
 
 function CardsPage() {
+  const [quickFilterText, setQuickFilterText] = useState("");
   const { data: cards, isLoading } = useQuery({
-    queryKey: ['cards'],
+    queryKey: ["cards"],
     queryFn: () => getCards(),
-  })
+  });
+
+  const defaultColDef = useMemo(() => DEFAULT_COL_DEF, []);
 
   return (
-    <div className="container mx-auto p-6">
+    <div className="container mx-auto flex flex-col p-6">
       <h1 className="mb-6 text-2xl font-semibold">Cards</h1>
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 rounded-lg" />
-          ))}
-        </div>
+        <Skeleton className="h-[500px] w-full rounded-lg" />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {cards?.map((card) => (
-            <CardUi key={card.id} className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium truncate" title={card.name}>{card.name}</p>
-                  <p className="text-muted-foreground text-sm">
-                    {card.type ?? '—'} · {card.rarity ?? '—'}
-                  </p>
-                </div>
-                {card.cost != null && (
-                  <span className="shrink-0 rounded bg-muted px-2 py-0.5 text-sm font-medium">
-                    {card.cost}
-                  </span>
-                )}
-              </div>
-              {card.description && (
-                <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                  {card.description.replace(/\[.*?\]/g, '').trim()}
-                </p>
-              )}
-            </CardUi>
-          ))}
-        </div>
+        <>
+          <Input
+            type="search"
+            placeholder="Search cards..."
+            value={quickFilterText}
+            onChange={(e) => setQuickFilterText(e.target.value)}
+            className="mb-3 max-w-sm"
+          />
+          <div className="size-full" style={{ height: 500 }}>
+            <AgGridReact<Card>
+              theme={cardsGridTheme}
+              quickFilterText={quickFilterText}
+              rowData={cards ?? []}
+              columnDefs={COLUMN_DEFS}
+              defaultColDef={defaultColDef}
+              getRowId={(params) => params.data.id}
+            />
+          </div>
+        </>
       )}
     </div>
-  )
+  );
 }
 
-export default CardsPage
+export default CardsPage;

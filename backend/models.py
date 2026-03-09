@@ -53,6 +53,10 @@ class Run(SQLModel, table=True):
     relics: list[dict[str, Any]] | None = Field(
         default=None, sa_column=Column(JSON))
 
+    # Multiplayer: full list of players (id, character, deck, relics). Single-player runs have one entry.
+    players: list[dict[str, Any]] | None = Field(
+        default=None, sa_column=Column(JSON))
+
 
 class Card(SQLModel, table=True):
     __tablename__ = "cards"

@@ -3,7 +3,15 @@
  * Id is (start_time, seed); use `${start_time}_${seed}` for a display key.
  * user_id is set when the run was uploaded while signed in.
  * user is the owner (when present); null for anonymous runs.
+ * players is set for multiplayer runs (multiple entries); single-player runs have one or omit.
  */
+export interface RunPlayer {
+  id: number | string  // 1 for single-player, Steam ID for multiplayer
+  character: string
+  deck?: unknown[]
+  relics?: unknown[]
+}
+
 export interface Run {
   user_id?: string | null
   user?: { id: string } | null
@@ -24,4 +32,6 @@ export interface Run {
   relic_count: number
   floor_reached: number
   bosses_killed: number
+  /** Multiplayer: full list of players (id, character, deck, relics). Single-player has one entry or undefined. */
+  players?: RunPlayer[] | null
 }

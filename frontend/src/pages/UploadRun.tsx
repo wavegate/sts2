@@ -29,8 +29,17 @@ const COLUMN_DEFS: ColDef<Run>[] = [
     field: "character",
     headerName: "Character",
     width: 120,
-    valueGetter: (params) =>
-      params.data?.character?.replace("CHARACTER.", "") ?? "",
+    valueGetter: (params) => {
+      const run = params.data;
+      if (!run) return "";
+      const players = run.players;
+      if (players && players.length > 1) {
+        return players
+          .map((p) => (p.character ?? "").replace("CHARACTER.", ""))
+          .join(" / ");
+      }
+      return (run.character ?? "").replace("CHARACTER.", "") ?? "";
+    },
   },
   {
     field: "win",

@@ -65,19 +65,33 @@ def run_from_file(path: Path | str, user_id: str | None = None) -> Run:
     return run_from_dict(data, user_id)
 
 
+def _normalize_player(p: dict[str, Any]) -> dict[str, Any]:
+    """Extract id, character, deck, relics for storage. id may be int (1) or Steam ID (int)."""
+    return {
+        "id": p.get("id"),
+        "character": p.get("character", ""),
+        "deck": p.get("deck") or [],
+        "relics": p.get("relics") or [],
+    }
+
+
 def run_from_dict(data: dict[str, Any], user_id: str | None = None) -> Run:
     """
     Build a Run SQLModel instance from a parsed run JSON dict.
 
     data: The root object of a .run file (must contain start_time, players, etc.).
     user_id: Optional Clerk user id (owner). Set when uploaded while signed in.
+    Supports single-player (one player, id often 1) and multiplayer (multiple players with Steam IDs).
     """
     start_time = data["start_time"]
-    players = data.get("players") or []
+    players_raw = data.get("players") or []
     map_point_history = data.get("map_point_history") or []
 
-    # First player only (single-player run)
-    player = players[0] if players else {}
+    # Store full player list for multiplayer; each entry has id, character, deck, relics
+    players_stored = [_normalize_player(p) for p in players_raw]
+
+    # First player for backward-compat fields (character, deck, relics, counts)
+    player = players_raw[0] if players_raw else {}
     deck = player.get("deck") or []
     relics = player.get("relics") or []
 
@@ -86,7 +100,7 @@ def run_from_dict(data: dict[str, Any], user_id: str | None = None) -> Run:
         1 for c in deck if c.get("current_upgrade_level", 0) and c["current_upgrade_level"] >= 1
     )
     relic_count = len(relics)
-    floor_reached = _floor_reached(players)
+    floor_reached = _floor_reached(players_raw)
     map_point_counts = _map_point_counts(map_point_history)
     bosses_killed = _bosses_killed(map_point_counts)
 
@@ -115,6 +129,7 @@ def run_from_dict(data: dict[str, Any], user_id: str | None = None) -> Run:
         map_point_counts=map_point_counts or None,
         deck=deck,
         relics=relics,
+        players=players_stored if players_stored else None,
     )
 
 

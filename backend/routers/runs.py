@@ -33,7 +33,7 @@ class UserOut(BaseModel):
 
 
 class RunResponse(BaseModel):
-    """Run with optional user (owner)."""
+    """Run with optional user (owner). Supports single- and multiplayer runs."""
 
     model_config = {"from_attributes": True}
 
@@ -61,6 +61,7 @@ class RunResponse(BaseModel):
     map_point_counts: dict[str, int] | None = None
     deck: list[dict] | None = None
     relics: list[dict] | None = None
+    players: list[dict] | None = None
     user: UserOut | None = None
 
 
@@ -101,12 +102,14 @@ async def upload_runs(
     for file in files:
         filename = file.filename or "(unnamed)"
         if not filename.lower().endswith(".run"):
-            errors.append(UploadError(filename=filename, detail="Only .run files are accepted"))
+            errors.append(UploadError(filename=filename,
+                          detail="Only .run files are accepted"))
             continue
         try:
             contents = await file.read()
         except Exception as e:
-            errors.append(UploadError(filename=filename, detail="Failed to read file"))
+            errors.append(UploadError(filename=filename,
+                          detail="Failed to read file"))
             continue
 
         if len(contents) > RUN_FILE_MAX_BYTES:
@@ -121,14 +124,17 @@ async def upload_runs(
         try:
             data = json.loads(contents.decode("utf-8"))
         except ValueError as e:
-            errors.append(UploadError(filename=filename, detail=f"Invalid JSON: {e}"))
+            errors.append(UploadError(filename=filename,
+                          detail=f"Invalid JSON: {e}"))
             continue
         except UnicodeDecodeError as e:
-            errors.append(UploadError(filename=filename, detail="File must be UTF-8"))
+            errors.append(UploadError(filename=filename,
+                          detail="File must be UTF-8"))
             continue
 
         if not isinstance(data, dict):
-            errors.append(UploadError(filename=filename, detail="File must be a JSON object"))
+            errors.append(UploadError(filename=filename,
+                          detail="File must be a JSON object"))
             continue
 
         try:
@@ -157,7 +163,8 @@ async def upload_runs(
         try:
             run = run_from_dict(data, user_id)
         except KeyError as e:
-            errors.append(UploadError(filename=filename, detail=f"Invalid run file: missing {e}"))
+            errors.append(UploadError(filename=filename,
+                          detail=f"Invalid run file: missing {e}"))
             continue
 
         run = await ingest_run(session, run)
